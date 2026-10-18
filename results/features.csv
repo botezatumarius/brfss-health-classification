@@ -1,0 +1,50 @@
+feature,group,kind,missing,auc_alone
+_AGE80,demographics,num,0.0,0.601
+_SEX,demographics,bin,0.0,0.511
+_RACE,demographics,cat,0.025,0.534
+MARITAL,demographics,cat,0.011,0.554
+_EDUCAG,socioeconomic,ord,0.005,0.639
+_INCOMG1,socioeconomic,ord,0.215,0.67
+EMPLOY1,socioeconomic,cat,0.019,0.687
+RENTHOM1,socioeconomic,cat,0.01,0.556
+VETERAN3,demographics,bin,0.007,0.512
+_CHLDCNT,demographics,ord,0.024,0.542
+_URBSTAT,demographics,bin,0.016,0.513
+_STATE,demographics,cat,0.0,0.505
+_HLTHPLN,health care,bin,0.039,0.506
+PERSDOC3,health care,cat,0.008,0.539
+MEDCOST1,health care,bin,0.003,0.544
+CHECKUP1,health care,ord,0.013,0.538
+_RFHYPE6,chronic conditions,bin,0.004,0.631
+_RFCHOL3,chronic conditions,bin,0.146,0.58
+_MICHD,chronic conditions,bin,0.01,0.578
+CVDSTRK3,chronic conditions,bin,0.003,0.54
+_ASTHMS1,chronic conditions,ord,0.008,0.557
+CHCSCNCR,chronic conditions,bin,0.003,0.514
+CHCOCNCR,chronic conditions,bin,0.003,0.548
+CHCCOPD3,chronic conditions,bin,0.005,0.59
+ADDEPEV3,chronic conditions,bin,0.006,0.595
+CHCKDNY2,chronic conditions,bin,0.004,0.543
+DIABETE4,chronic conditions,cat,0.002,0.594
+_DRDXAR3,chronic conditions,bin,0.006,0.635
+_LMTACT3,disability,cat,0.01,0.657
+DEAF,disability,bin,0.037,0.546
+BLIND,disability,bin,0.039,0.549
+DECIDE,disability,bin,0.045,0.6
+DIFFWALK,disability,bin,0.045,0.694
+DIFFDRES,disability,bin,0.045,0.571
+DIFFALON,disability,bin,0.049,0.607
+_TOTINDA,lifestyle,bin,0.002,0.642
+_SMOKER3,lifestyle,ord,0.057,0.591
+_CURECI1,lifestyle,bin,0.054,0.504
+USENOW3,lifestyle,ord,0.052,0.502
+_RFBING5,lifestyle,bin,0.08,0.523
+_DRNKWK1,lifestyle,num,0.079,0.609
+_FRUTSU1,lifestyle,num,0.116,0.541
+_VEGESU1,lifestyle,num,0.136,0.562
+FRNCHDA_,lifestyle,num,0.102,0.512
+_BMI5,lifestyle,num,0.106,0.59
+FLUSHOT7,prevention,bin,0.071,0.506
+PNEUVAC4,prevention,bin,0.143,0.577
+_AIDTST4,prevention,bin,0.118,0.524
+_CHOLCH3,prevention,ord,0.068,0.517
