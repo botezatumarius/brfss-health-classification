@@ -6,6 +6,7 @@ Results are written to results/ (CSV) and report/figures/ (PNG).
 import re
 import sys
 import tarfile
+import time
 import urllib.request
 from pathlib import Path
 
@@ -13,10 +14,15 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
+import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 import seaborn as sns  # noqa: E402
+from sklearn.compose import ColumnTransformer  # noqa: E402
+from sklearn.impute import SimpleImputer  # noqa: E402
 from sklearn.metrics import roc_auc_score  # noqa: E402
-from sklearn.model_selection import StratifiedKFold, train_test_split  # noqa: E402
+from sklearn.model_selection import StratifiedKFold, cross_validate, train_test_split  # noqa: E402
+from sklearn.pipeline import Pipeline  # noqa: E402
+from sklearn.preprocessing import OneHotEncoder, StandardScaler  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent
 DATA, RESULTS, FIGURES = ROOT / "data", ROOT / "results", ROOT / "report" / "figures"
@@ -145,6 +151,37 @@ def splits(raw):
     return sample, holdout
 
 
+def preprocessor(features=None, scale=True):
+    """Median imputation with missing indicators for numbers; one-hot (with a 'missing' level) for categories."""
+    features = list(FEATURES if features is None else features)
+    nominal = [f for f in features if FEATURES.get(f, ("", "num"))[1] == "cat"]
+    numeric = [f for f in features if f not in nominal]
+    num_steps = [("impute", SimpleImputer(strategy="median", add_indicator=True))]
+    if scale:
+        num_steps.append(("scale", StandardScaler()))
+    cat_steps = [("impute", SimpleImputer(strategy="constant", fill_value=-1)),
+                 ("onehot", OneHotEncoder(handle_unknown="ignore", sparse_output=False))]
+    return ColumnTransformer([("num", Pipeline(num_steps), numeric), ("cat", Pipeline(cat_steps), nominal)])
+
+
+def evaluate(model, X, y, name, experiment, extra=None):
+    """Stratified 10-fold CV on the shared folds; appends one row per fold to results/<experiment>.csv."""
+    start = time.perf_counter()
+    scores = cross_validate(model, X, y, cv=CV, scoring=SCORING, n_jobs=JOBS)
+    rows = pd.DataFrame({"model": name, "fold": range(CV.n_splits),
+                         **{m: scores[f"test_{m}"] for m in SCORING}, "fit_s": scores["fit_time"]})
+    for key, value in (extra or {}).items():
+        rows[key] = value
+    path = RESULTS / f"{experiment}.csv"
+    old = pd.read_csv(path) if path.exists() else pd.DataFrame()
+    if len(old):
+        old = old[old["model"] != name]
+    pd.concat([old, rows]).to_csv(path, index=False)
+    print(f"{experiment:12s} {name:38s} AUC {rows.roc_auc.mean():.4f} ± {rows.roc_auc.std():.4f} "
+          f"({time.perf_counter() - start:.0f}s)", flush=True)
+    return rows
+
+
 def savefig(name):
     FIGURES.mkdir(parents=True, exist_ok=True)
     plt.tight_layout()
@@ -241,7 +278,36 @@ def stage_eda(raw, sample, holdout):
     print("top single-column AUC:", screen.head(8).round(3).to_dict())
 
 
-STAGES = {"eda": stage_eda}
+def stage_learning_curve(raw, sample, holdout):
+    """AUC on a fixed test set as the training size grows: justifies the experiment sample size."""
+    from sklearn.ensemble import HistGradientBoostingClassifier
+    from sklearn.linear_model import LogisticRegression
+    X, y = encode(raw), target(raw)
+    test = holdout[:50_000]
+    pool = raw.index.difference(sample).difference(holdout)
+    rows = []
+    for size in (2_000, 5_000, 10_000, 25_000, 50_000, 100_000, 200_000):
+        train = pd.Index(np.random.default_rng(SEED).choice(pool, size, replace=False))
+        for name, clf in (("Logistic regression", LogisticRegression(max_iter=2000)),
+                          ("Gradient boosting", HistGradientBoostingClassifier(random_state=SEED))):
+            model = Pipeline([("prep", preprocessor()), ("clf", clf)]).fit(X.loc[train], y[train])
+            auc = roc_auc_score(y[test], model.predict_proba(X.loc[test])[:, 1])
+            rows.append({"model": name, "size": size, "roc_auc": auc})
+            print(f"learning curve {name:20s} n={size:7d} AUC {auc:.4f}", flush=True)
+    curve = pd.DataFrame(rows)
+    curve.to_csv(RESULTS / "learning_curve.csv", index=False)
+    plt.figure(figsize=(6, 3.2))
+    for i, (name, part) in enumerate(curve.groupby("model")):
+        plt.plot(part["size"], part["roc_auc"], marker="o", color=["#eb6834", "#2a78d6"][i], label=name)
+    plt.axvline(SAMPLE, color="#52514e", linestyle="--", linewidth=0.8)
+    plt.xscale("log")
+    plt.gca().set(title="Learning curve (test AUC on 50,000 unseen rows)", xlabel="training rows", ylabel="ROC-AUC")
+    plt.legend()
+    savefig("learning_curve")
+
+
+STAGES = {"eda": stage_eda,
+          "curve": stage_learning_curve}
 
 
 def main():
