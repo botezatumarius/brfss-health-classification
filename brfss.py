@@ -306,8 +306,48 @@ def stage_learning_curve(raw, sample, holdout):
     savefig("learning_curve")
 
 
+def data(raw, sample, classes=2):
+    return encode(raw.loc[sample]), target(raw.loc[sample], classes)
+
+
+def pipe(clf, features=None, scale=True, select=None, steps=()):
+    parts = [("prep", preprocessor(features, scale))]
+    if select is not None:
+        parts.append(("select", select))
+    return Pipeline([*parts, *steps, ("clf", clf)])
+
+
+def anova(k):
+    from sklearn.feature_selection import SelectKBest, f_classif
+    return SelectKBest(f_classif, k=k)
+
+
+def stage_basic(raw, sample, holdout):
+    """Basic level: dummy baseline, filter feature selection and two manually tuned models."""
+    from sklearn.dummy import DummyClassifier
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.tree import DecisionTreeClassifier
+    X, y = data(raw, sample)
+    for strategy in ("prior", "stratified"):
+        evaluate(pipe(DummyClassifier(strategy=strategy, random_state=SEED)), X, y, f"Dummy ({strategy})", "baseline")
+    # Filter selection (ANOVA F-test, fitted inside each fold): how many encoded columns are needed?
+    for k in (5, 10, 20, 40, 80, "all"):
+        evaluate(pipe(LogisticRegression(max_iter=2000), select=anova(k)), X, y, f"LR, top {k} (ANOVA)", "kbest",
+                 {"k": k})
+    # Manual tuning on the 40 best columns (the curve flattens there).
+    for C in (0.001, 0.01, 0.1, 1, 10):
+        evaluate(pipe(LogisticRegression(C=C, max_iter=2000), select=anova(40)), X, y, f"LR C={C}",
+                 "tuning", {"family": "Logistic regression", "setting": f"C={C}"})
+    for depth, leaf in ((3, 1), (5, 1), (8, 1), (12, 1), (None, 1), (8, 100), (12, 100), (12, 400), (16, 100),
+                        (16, 200), (20, 200)):
+        evaluate(pipe(DecisionTreeClassifier(max_depth=depth, min_samples_leaf=leaf, random_state=SEED),
+                      select=anova(40)), X, y, f"Tree depth={depth} leaf={leaf}", "tuning",
+                 {"family": "Decision tree", "setting": f"max_depth={depth}, min_samples_leaf={leaf}"})
+
+
 STAGES = {"eda": stage_eda,
-          "curve": stage_learning_curve}
+          "curve": stage_learning_curve,
+          "basic": stage_basic}
 
 
 def main():
