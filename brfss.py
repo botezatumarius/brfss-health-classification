@@ -306,6 +306,39 @@ def stage_learning_curve(raw, sample, holdout):
     savefig("learning_curve")
 
 
+# ------------------------------------------------------------------------------ models
+def lightgbm(**params):
+    from lightgbm import LGBMClassifier
+    base = dict(n_estimators=400, learning_rate=0.05, num_leaves=31, min_child_samples=50, subsample=0.8,
+                subsample_freq=1, colsample_bytree=0.7, random_state=SEED, n_jobs=1, verbose=-1)
+    return LGBMClassifier(**{**base, **params})
+
+
+def classifiers():
+    """The compared models, with the settings chosen by manual tuning (stage basic) or common defaults."""
+    from sklearn.ensemble import (ExtraTreesClassifier, GradientBoostingClassifier, HistGradientBoostingClassifier,
+                                  RandomForestClassifier)
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.naive_bayes import GaussianNB
+    from sklearn.neighbors import KNeighborsClassifier
+    from sklearn.neural_network import MLPClassifier
+    from sklearn.tree import DecisionTreeClassifier
+    return {
+        "Logistic regression": LogisticRegression(C=0.1, max_iter=2000),
+        "Decision tree": DecisionTreeClassifier(max_depth=16, min_samples_leaf=100, random_state=SEED),
+        "k-nearest neighbours": KNeighborsClassifier(n_neighbors=150),
+        "Gaussian naive Bayes": GaussianNB(),
+        "Random forest": RandomForestClassifier(n_estimators=300, min_samples_leaf=20, max_features="sqrt",
+                                                random_state=SEED, n_jobs=1),
+        "Extra trees": ExtraTreesClassifier(n_estimators=300, min_samples_leaf=20, random_state=SEED, n_jobs=1),
+        "Gradient boosting (sklearn)": GradientBoostingClassifier(n_estimators=200, max_depth=3, random_state=SEED),
+        "Hist. gradient boosting": HistGradientBoostingClassifier(learning_rate=0.05, max_iter=300, random_state=SEED),
+        "Neural network (MLP)": MLPClassifier(hidden_layer_sizes=(64, 32), alpha=1e-3, early_stopping=True,
+                                              random_state=SEED, max_iter=200),
+        "LightGBM": lightgbm(),
+    }
+
+
 def data(raw, sample, classes=2):
     return encode(raw.loc[sample]), target(raw.loc[sample], classes)
 
@@ -345,9 +378,17 @@ def stage_basic(raw, sample, holdout):
                  {"family": "Decision tree", "setting": f"max_depth={depth}, min_samples_leaf={leaf}"})
 
 
+def stage_models(raw, sample, holdout):
+    """Intermediate level: ten classifiers on all features, same folds."""
+    X, y = data(raw, sample)
+    for name, clf in classifiers().items():
+        evaluate(pipe(clf), X, y, name, "models")
+
+
 STAGES = {"eda": stage_eda,
           "curve": stage_learning_curve,
-          "basic": stage_basic}
+          "basic": stage_basic,
+          "models": stage_models}
 
 
 def main():
