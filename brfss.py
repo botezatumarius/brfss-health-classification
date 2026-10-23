@@ -385,10 +385,30 @@ def stage_models(raw, sample, holdout):
         evaluate(pipe(clf), X, y, name, "models")
 
 
+def stage_imbalance(raw, sample, holdout):
+    """Class weights, undersampling, SMOTE and oversampling, applied inside the training folds only."""
+    from imblearn.over_sampling import SMOTE, RandomOverSampler
+    from imblearn.pipeline import Pipeline as ImbPipeline
+    from imblearn.under_sampling import RandomUnderSampler
+    from sklearn.linear_model import LogisticRegression
+    X, y = data(raw, sample)
+    for family, make in (("Logistic regression", lambda **kw: LogisticRegression(C=0.1, max_iter=2000, **kw)),
+                         ("LightGBM", lambda **kw: lightgbm(**kw))):
+        variants = {"none": (make(), None), "class weights": (make(class_weight="balanced"), None),
+                    "random undersampling": (make(), RandomUnderSampler(random_state=SEED)),
+                    "random oversampling": (make(), RandomOverSampler(random_state=SEED)),
+                    "SMOTE": (make(), SMOTE(random_state=SEED))}
+        for technique, (clf, sampler) in variants.items():
+            steps = [("prep", preprocessor())] + ([("sample", sampler)] if sampler else []) + [("clf", clf)]
+            evaluate(ImbPipeline(steps), X, y, f"{family} + {technique}", "imbalance",
+                     {"family": family, "technique": technique})
+
+
 STAGES = {"eda": stage_eda,
           "curve": stage_learning_curve,
           "basic": stage_basic,
-          "models": stage_models}
+          "models": stage_models,
+          "imbalance": stage_imbalance}
 
 
 def main():
