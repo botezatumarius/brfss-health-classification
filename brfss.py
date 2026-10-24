@@ -404,11 +404,35 @@ def stage_imbalance(raw, sample, holdout):
                      {"family": family, "technique": technique})
 
 
+def stage_pca(raw, sample, holdout):
+    """Dimensionality reduction: PCA components versus all encoded columns."""
+    from sklearn.decomposition import PCA
+    from sklearn.linear_model import LogisticRegression
+    X, y = data(raw, sample)
+    full = preprocessor().fit_transform(X)
+    ratio = PCA(random_state=SEED).fit(full).explained_variance_ratio_
+    pd.DataFrame({"component": range(1, len(ratio) + 1), "explained": ratio}).to_csv(RESULTS / "pca_variance.csv",
+                                                                                     index=False)
+    plt.figure(figsize=(6, 3))
+    plt.plot(range(1, len(ratio) + 1), np.cumsum(ratio), color="#2a78d6")
+    for share in (0.8, 0.9):
+        plt.axhline(share, color="#52514e", linestyle=":", linewidth=0.8)
+    plt.gca().set(title=f"PCA on the {full.shape[1]} encoded columns", xlabel="components",
+                  ylabel="cumulative explained variance")
+    savefig("pca_variance")
+    for n in (5, 10, 20, 40, 80):
+        for family, clf in (("Logistic regression", LogisticRegression(C=0.1, max_iter=2000)),
+                            ("LightGBM", lightgbm())):
+            evaluate(pipe(clf, steps=[("pca", PCA(n_components=n, random_state=SEED))]), X, y,
+                     f"{family} + PCA {n}", "pca", {"family": family, "components": n})
+
+
 STAGES = {"eda": stage_eda,
           "curve": stage_learning_curve,
           "basic": stage_basic,
           "models": stage_models,
-          "imbalance": stage_imbalance}
+          "imbalance": stage_imbalance,
+          "pca": stage_pca}
 
 
 def main():
