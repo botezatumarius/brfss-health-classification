@@ -1,0 +1,32 @@
+feature,votes,group
+_EDUCAG,4,socioeconomic
+_MICHD,4,chronic conditions
+_LMTACT3,4,disability
+_TOTINDA,4,lifestyle
+DIFFALON,3,disability
+CHCCOPD3,3,chronic conditions
+ADDEPEV3,3,chronic conditions
+EMPLOY1,3,socioeconomic
+_INCOMG1,3,socioeconomic
+DIABETE4,3,chronic conditions
+DIFFWALK,3,disability
+_RFHYPE6,3,chronic conditions
+PERSDOC3,3,health care
+DECIDE,3,disability
+CHCKDNY2,2,chronic conditions
+MEDCOST1,2,health care
+RENTHOM1,2,socioeconomic
+CHCOCNCR,2,chronic conditions
+BLIND,1,disability
+DIFFDRES,1,disability
+_DRDXAR3,1,chronic conditions
+_RACE,1,demographics
+FRNCHDA_,1,lifestyle
+_AGE80,1,demographics
+_BMI5,1,lifestyle
+_DRNKWK1,1,lifestyle
+_FRUTSU1,1,lifestyle
+_SEX,1,demographics
+_SMOKER3,1,lifestyle
+_VEGESU1,1,lifestyle
+_STATE,1,demographics

@@ -427,12 +427,64 @@ def stage_pca(raw, sample, holdout):
                      f"{family} + PCA {n}", "pca", {"family": family, "components": n})
 
 
+def raw_feature(column):
+    """Original survey variable behind an encoded column name (e.g. 'cat__EMPLOY1_8.0' -> 'EMPLOY1')."""
+    name = column.split("__", 1)[-1].replace("missingindicator_", "")
+    for feature in sorted(FEATURES, key=len, reverse=True):
+        if name == feature or name.startswith(feature + "_"):
+            return feature
+    return name
+
+
+def stage_selection(raw, sample, holdout):
+    """Advanced feature selection (fitted inside each fold) and the variable-group hypothesis."""
+    from sklearn.feature_selection import RFE, SelectFromModel
+    from sklearn.linear_model import LogisticRegression
+    X, y = data(raw, sample)
+    k = 20
+    methods = {
+        "Filter: ANOVA F-test": anova(k),
+        "Embedded: L1 logistic regression": SelectFromModel(
+            LogisticRegression(penalty="l1", C=0.01, solver="liblinear"), max_features=k, threshold=-np.inf),
+        "Embedded: LightGBM importance": SelectFromModel(lightgbm(n_estimators=200), max_features=k, threshold=-np.inf),
+        "Wrapper: RFE (logistic regression)": RFE(LogisticRegression(C=0.1, max_iter=2000), n_features_to_select=k,
+                                                  step=10),
+    }
+    for name, selector in methods.items():
+        evaluate(pipe(lightgbm(), select=selector), X, y, f"{name} (top {k})", "selection", {"method": name, "k": k})
+    evaluate(pipe(lightgbm()), X, y, "All features", "selection", {"method": "none", "k": "all"})
+
+    # Which variables do the methods keep? Fitted once on the whole sample, for the report only.
+    encoded = preprocessor().fit(X)
+    names = encoded.get_feature_names_out()
+    Z = encoded.transform(X)
+    chosen = {}
+    for name, selector in methods.items():
+        mask = selector.fit(Z, y).get_support()
+        chosen[name] = sorted({raw_feature(c) for c in names[mask]})
+    votes = pd.Series([f for kept in chosen.values() for f in kept]).value_counts()
+    pd.DataFrame({"votes": votes, "group": [FEATURES[f][0] for f in votes.index]}).to_csv(
+        RESULTS / "selection_votes.csv", index_label="feature")
+
+    # Hypothesis: function, chronic disease and socioeconomic status carry almost all the signal.
+    groups = pd.Series({f: g for f, (g, _, _) in FEATURES.items()})
+    hypothesis = list(groups[groups.isin(["disability", "chronic conditions", "socioeconomic"])].index)
+    sets = {f"Only {g}": list(groups[groups == g].index) for g in groups.unique()}
+    sets["Hypothesis: disability + chronic + socioeconomic"] = hypothesis
+    sets["All except the hypothesis groups"] = [f for f in FEATURES if f not in hypothesis]
+    sets["All features"] = list(FEATURES)
+    for name, features in sets.items():
+        evaluate(pipe(lightgbm(), features=features), X[features], y, name, "groups",
+                 {"features": len(features)})
+
+
 STAGES = {"eda": stage_eda,
           "curve": stage_learning_curve,
           "basic": stage_basic,
           "models": stage_models,
           "imbalance": stage_imbalance,
-          "pca": stage_pca}
+          "pca": stage_pca,
+          "selection": stage_selection}
 
 
 def main():
