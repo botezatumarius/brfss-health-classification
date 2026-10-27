@@ -478,13 +478,46 @@ def stage_selection(raw, sample, holdout):
                  {"features": len(features)})
 
 
+def engineer(X):
+    """Clinically motivated features: WHO BMI classes, guideline thresholds, disease counts and interactions."""
+    out = X.copy()
+    chronic = ["_RFHYPE6", "_RFCHOL3", "_MICHD", "CVDSTRK3", "CHCSCNCR", "CHCOCNCR", "CHCCOPD3", "ADDEPEV3", "CHCKDNY2",
+               "_DRDXAR3"]
+    disability = ["DEAF", "BLIND", "DECIDE", "DIFFWALK", "DIFFDRES", "DIFFALON"]
+    out["N_CHRONIC"] = X[chronic].sum(axis=1) + (X["DIABETE4"] == 1) + (X["_ASTHMS1"] == 2)
+    out["N_DISABILITY"] = X[disability].sum(axis=1)
+    bmi = X["_BMI5"]
+    out["UNDERWEIGHT"] = (bmi < 18.5).astype(float).where(bmi.notna())
+    out["OBESITY_CLASS"] = pd.cut(bmi, [0, 30, 35, 40, np.inf], labels=False, right=False).astype(float)
+    limit = np.where(X["_SEX"] == 1, 7, 14)  # CDC heavy drinking: > 7 drinks/week (women), > 14 (men).
+    out["HEAVY_DRINKER"] = (X["_DRNKWK1"] > limit).astype(float).where(X["_DRNKWK1"].notna())
+    out["FIVE_A_DAY"] = ((X["_FRUTSU1"] + X["_VEGESU1"]) >= 5).astype(float).where(X["_FRUTSU1"].notna())
+    out["AGE_X_CHRONIC"] = X["_AGE80"] * out["N_CHRONIC"]
+    out["INACTIVE_X_DISABILITY"] = (1 - X["_TOTINDA"]) * out["N_DISABILITY"]
+    out["LOW_INCOME_NO_COVER"] = ((X["_INCOMG1"] <= 2) & (X["_HLTHPLN"] == 0)).astype(float)
+    out["COST_BARRIER_X_CHRONIC"] = X["MEDCOST1"] * out["N_CHRONIC"]
+    return out
+
+
+def stage_engineering(raw, sample, holdout):
+    """Same folds with and without the engineered features, for a linear and a boosted model."""
+    from sklearn.linear_model import LogisticRegression
+    X, y = data(raw, sample)
+    Xe = engineer(X)
+    for name, make in (("Logistic regression", lambda: LogisticRegression(C=0.1, max_iter=3000)),
+                       ("LightGBM", lightgbm)):
+        evaluate(pipe(make()), X, y, name, "engineering")
+        evaluate(pipe(make(), features=Xe.columns), Xe, y, f"{name} + engineered", "engineering")
+
+
 STAGES = {"eda": stage_eda,
           "curve": stage_learning_curve,
           "basic": stage_basic,
           "models": stage_models,
           "imbalance": stage_imbalance,
           "pca": stage_pca,
-          "selection": stage_selection}
+          "selection": stage_selection,
+          "engineering": stage_engineering}
 
 
 def main():
