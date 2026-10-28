@@ -1,0 +1,7 @@
+model_a,model_b,mean_diff,wins_a,statistic,p,p_holm,significant
+Hypothesis groups,All features,-0.01347146809960451,0,0.0,0.001953125,0.01171875,True
+Embedded: L1 logistic regression (top 20),All features,-0.011235274201864409,0,0.0,0.001953125,0.01171875,True
+"LightGBM (tuned, nested CV)",LightGBM,0.0027429624612313906,10,0.0,0.001953125,0.01171875,True
+Logistic regression + engineered,Logistic regression,0.0009051059032355368,8,3.0,0.009765625,0.029296875,True
+"Logistic regression (tuned, nested CV)",Logistic regression,0.000742101431704445,9,3.0,0.009765625,0.029296875,True
+LightGBM + engineered,LightGBM,-0.00042885670773815663,3,19.0,0.431640625,0.431640625,False

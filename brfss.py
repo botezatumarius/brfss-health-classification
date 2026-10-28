@@ -478,6 +478,66 @@ def stage_selection(raw, sample, holdout):
                  {"features": len(features)})
 
 
+def stage_stats(raw, sample, holdout):
+    """Friedman test over all models, then Wilcoxon signed-rank tests (Holm-corrected) on identical folds."""
+    from scipy.stats import friedmanchisquare, wilcoxon
+    models = pd.read_csv(RESULTS / "models.csv").pivot(index="fold", columns="model", values="roc_auc")
+    ranks = models.rank(axis=1, ascending=False).mean().sort_values()
+    friedman = friedmanchisquare(*[models[c] for c in models])
+    pd.DataFrame({"mean_auc": models.mean(), "std": models.std(), "mean_rank": ranks}).sort_values("mean_rank") \
+        .to_csv(RESULTS / "model_ranks.csv", index_label="model")
+
+    def compare(pairs, table):
+        rows = []
+        for (name_a, a), (name_b, b) in pairs:
+            stat, p = wilcoxon(a, b)
+            rows.append({"model_a": name_a, "model_b": name_b, "mean_diff": (a - b).mean(),
+                         "wins_a": int((a > b).sum()),
+                         "statistic": stat, "p": p})
+        out = pd.DataFrame(rows).sort_values("p")
+        m = len(out)
+        out["p_holm"] = np.minimum(1, np.maximum.accumulate(out["p"].values * (m - np.arange(m))))
+        out["significant"] = out["p_holm"] < 0.05
+        out.to_csv(RESULTS / f"{table}.csv", index=False)
+        return out
+
+    top = list(ranks.index[:5])
+    compare([((a, models[a]), (b, models[b])) for i, a in enumerate(top) for b in top[i + 1:]], "wilcoxon_models")
+    other = []
+    groups = pd.read_csv(RESULTS / "groups.csv").pivot(index="fold", columns="model", values="roc_auc")
+    other.append((("Hypothesis groups", groups["Hypothesis: disability + chronic + socioeconomic"]),
+                  ("All features", groups["All features"])))
+    selection = pd.read_csv(RESULTS / "selection.csv").pivot(index="fold", columns="model", values="roc_auc")
+    best_selector = selection.drop(columns="All features").mean().idxmax()
+    other.append(((best_selector, selection[best_selector]), ("All features", selection["All features"])))
+    if (RESULTS / "engineering.csv").exists():
+        eng = pd.read_csv(RESULTS / "engineering.csv").pivot(index="fold", columns="model", values="roc_auc")
+        for name in ("Logistic regression", "LightGBM"):
+            other.append(((f"{name} + engineered", eng[f"{name} + engineered"]), (name, eng[name])))
+    if (RESULTS / "nested.csv").exists():
+        nested = pd.read_csv(RESULTS / "nested.csv").pivot(index="fold", columns="model", values="outer_auc")
+        for name in nested:
+            other.append(((f"{name} (tuned, nested CV)", nested[name]), (name, models[name])))
+    compare(other, "wilcoxon_other")
+    print(f"Friedman chi2={friedman.statistic:.1f}, p={friedman.pvalue:.2e}")
+    pd.DataFrame([{"chi2": friedman.statistic, "p": friedman.pvalue, "models": models.shape[1]}]) \
+        .to_csv(RESULTS / "friedman.csv", index=False)
+
+    plt.figure(figsize=(7, 3.6))
+    order = models.mean().sort_values().index
+    plt.boxplot([models[c] for c in order], vert=False, tick_labels=order)
+    plt.gca().set(title="ROC-AUC on the 10 shared folds", xlabel="ROC-AUC")
+    savefig("models_boxplot")
+
+    summary = groups.agg(["mean", "std"]).T.sort_values("mean")
+    plt.figure(figsize=(8, 3.4))
+    colors = ["#eb6834" if name.startswith("Hypothesis") else "#2a78d6" for name in summary.index]
+    plt.barh(summary.index, summary["mean"], xerr=summary["std"], color=colors)
+    plt.xlim(0.5, 0.9)
+    plt.gca().set(title="LightGBM on each group of variables", xlabel="ROC-AUC")
+    savefig("groups")
+
+
 def engineer(X):
     """Clinically motivated features: WHO BMI classes, guideline thresholds, disease counts and interactions."""
     out = X.copy()
@@ -517,7 +577,8 @@ STAGES = {"eda": stage_eda,
           "imbalance": stage_imbalance,
           "pca": stage_pca,
           "selection": stage_selection,
-          "engineering": stage_engineering}
+          "engineering": stage_engineering,
+          "stats": stage_stats}
 
 
 def main():

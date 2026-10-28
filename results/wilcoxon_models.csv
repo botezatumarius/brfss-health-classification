@@ -1,0 +1,11 @@
+model_a,model_b,mean_diff,wins_a,statistic,p,p_holm,significant
+Gradient boosting (sklearn),Extra trees,0.0051650738727209485,10,0.0,0.001953125,0.01953125,True
+LightGBM,Extra trees,0.0050295091885710465,10,0.0,0.001953125,0.01953125,True
+Random forest,Extra trees,0.002477221975228527,10,0.0,0.001953125,0.01953125,True
+Hist. gradient boosting,Extra trees,0.0050521949308026445,10,0.0,0.001953125,0.01953125,True
+Gradient boosting (sklearn),Random forest,0.0026878518974924213,9,1.0,0.00390625,0.0234375,True
+LightGBM,Random forest,0.002552287213342519,9,2.0,0.005859375,0.029296875,True
+Hist. gradient boosting,Random forest,0.0025749729555741173,9,4.0,0.013671875,0.0546875,False
+Gradient boosting (sklearn),LightGBM,0.00013556468414990252,6,20.0,0.4921875,1.0,False
+LightGBM,Hist. gradient boosting,-2.2685742231598473e-05,6,22.0,0.625,1.0,False
+Gradient boosting (sklearn),Hist. gradient boosting,0.00011287894191830405,5,24.0,0.76953125,1.0,False
