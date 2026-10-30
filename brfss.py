@@ -16,6 +16,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
+from scipy.stats import loguniform, randint, uniform  # noqa: E402
 import seaborn as sns  # noqa: E402
 from sklearn.compose import ColumnTransformer  # noqa: E402
 from sklearn.impute import SimpleImputer  # noqa: E402
@@ -538,6 +539,38 @@ def stage_stats(raw, sample, holdout):
     savefig("groups")
 
 
+# Search space of the automated LightGBM tuning (nested CV and final model).
+LIGHTGBM_SPACE = {"clf__n_estimators": randint(200, 1200), "clf__learning_rate": loguniform(0.01, 0.2),
+                  "clf__num_leaves": randint(8, 128), "clf__min_child_samples": randint(20, 400),
+                  "clf__subsample": uniform(0.5, 0.5), "clf__colsample_bytree": uniform(0.3, 0.7),
+                  "clf__reg_lambda": loguniform(1e-3, 30)}
+
+
+def stage_nested(raw, sample, holdout):
+    """Nested cross-validation: randomised search in 3 inner folds, unbiased score on the 10 outer folds."""
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.model_selection import RandomizedSearchCV
+    X, y = data(raw, sample)
+    inner = StratifiedKFold(n_splits=3, shuffle=True, random_state=SEED)
+    spaces = {
+        "Logistic regression": (LogisticRegression(max_iter=3000), {"clf__C": loguniform(1e-3, 10)}, 15),
+        "LightGBM": (lightgbm(), LIGHTGBM_SPACE, 25),
+    }
+    rows = []
+    for name, (clf, space, n_iter) in spaces.items():
+        for fold, (train, test) in enumerate(CV.split(X, y)):
+            search = RandomizedSearchCV(pipe(clf), space, n_iter=n_iter, scoring="roc_auc", cv=inner,
+                                        random_state=SEED, n_jobs=JOBS)
+            search.fit(X.iloc[train], y.iloc[train])
+            auc = roc_auc_score(y.iloc[test], search.predict_proba(X.iloc[test])[:, 1])
+            params = {k.replace("clf__", ""): float(round(v, 4)) if isinstance(v, float) else int(v)
+                      for k, v in search.best_params_.items()}
+            rows.append({"model": name, "fold": fold, "outer_auc": auc, "inner_auc": search.best_score_,
+                         "params": params})
+            print(f"nested {name:20s} fold {fold} outer {auc:.4f} inner {search.best_score_:.4f} {params}", flush=True)
+    pd.DataFrame(rows).to_csv(RESULTS / "nested.csv", index=False)
+
+
 def engineer(X):
     """Clinically motivated features: WHO BMI classes, guideline thresholds, disease counts and interactions."""
     out = X.copy()
@@ -578,7 +611,8 @@ STAGES = {"eda": stage_eda,
           "pca": stage_pca,
           "selection": stage_selection,
           "engineering": stage_engineering,
-          "stats": stage_stats}
+          "stats": stage_stats,
+          "nested": stage_nested}
 
 
 def main():

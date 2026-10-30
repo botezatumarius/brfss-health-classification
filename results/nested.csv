@@ -1,0 +1,21 @@
+model,fold,outer_auc,inner_auc,params
+Logistic regression,0,0.8599040133193281,0.860743271991807,{'C': 0.0071}
+Logistic regression,1,0.8558401518976089,0.8615243031380221,{'C': 0.0071}
+Logistic regression,2,0.8620983079800221,0.8607434322997829,{'C': 0.0071}
+Logistic regression,3,0.8640079966770956,0.8602499829752929,{'C': 0.0071}
+Logistic regression,4,0.8556692728606277,0.8612140965172858,{'C': 0.0071}
+Logistic regression,5,0.8640827562557747,0.8597320599664687,{'C': 0.0071}
+Logistic regression,6,0.8565943865659058,0.8615165335447861,{'C': 0.0071}
+Logistic regression,7,0.8655564834637532,0.860192819508579,{'C': 0.0071}
+Logistic regression,8,0.8695636627048575,0.8601089341946507,{'C': 0.0071}
+Logistic regression,9,0.8580087064447068,0.8602194586938308,{'C': 0.0053}
+LightGBM,0,0.8678016844862906,0.8674477469739946,"{'colsample_bytree': 0.7282, 'learning_rate': 0.0102, 'min_child_samples': 364, 'n_estimators': 760, 'num_leaves': 98, 'reg_lambda': 0.5487, 'subsample': 0.5697}"
+LightGBM,1,0.8630900991473656,0.8682509433696898,"{'colsample_bytree': 0.7282, 'learning_rate': 0.0102, 'min_child_samples': 364, 'n_estimators': 760, 'num_leaves': 98, 'reg_lambda': 0.5487, 'subsample': 0.5697}"
+LightGBM,2,0.870980265491758,0.8675457592705139,"{'colsample_bytree': 0.7282, 'learning_rate': 0.0102, 'min_child_samples': 364, 'n_estimators': 760, 'num_leaves': 98, 'reg_lambda': 0.5487, 'subsample': 0.5697}"
+LightGBM,3,0.873529018695379,0.8669094327906245,"{'colsample_bytree': 0.7282, 'learning_rate': 0.0102, 'min_child_samples': 364, 'n_estimators': 760, 'num_leaves': 98, 'reg_lambda': 0.5487, 'subsample': 0.5697}"
+LightGBM,4,0.8639416078620521,0.868067176993215,"{'colsample_bytree': 0.7282, 'learning_rate': 0.0102, 'min_child_samples': 364, 'n_estimators': 760, 'num_leaves': 98, 'reg_lambda': 0.5487, 'subsample': 0.5697}"
+LightGBM,5,0.8702979039319209,0.8675129602586268,"{'colsample_bytree': 0.7282, 'learning_rate': 0.0102, 'min_child_samples': 364, 'n_estimators': 760, 'num_leaves': 98, 'reg_lambda': 0.5487, 'subsample': 0.5697}"
+LightGBM,6,0.863762358061435,0.8681120525392932,"{'colsample_bytree': 0.7282, 'learning_rate': 0.0102, 'min_child_samples': 364, 'n_estimators': 760, 'num_leaves': 98, 'reg_lambda': 0.5487, 'subsample': 0.5697}"
+LightGBM,7,0.8732184547098774,0.866127890133387,"{'colsample_bytree': 0.7282, 'learning_rate': 0.0102, 'min_child_samples': 364, 'n_estimators': 760, 'num_leaves': 98, 'reg_lambda': 0.5487, 'subsample': 0.5697}"
+LightGBM,8,0.8747355653883063,0.8674278699689971,"{'colsample_bytree': 0.7282, 'learning_rate': 0.0102, 'min_child_samples': 364, 'n_estimators': 760, 'num_leaves': 98, 'reg_lambda': 0.5487, 'subsample': 0.5697}"
+LightGBM,9,0.8678233542189575,0.8670949195971778,"{'colsample_bytree': 0.7282, 'learning_rate': 0.0102, 'min_child_samples': 364, 'n_estimators': 760, 'num_leaves': 98, 'reg_lambda': 0.5487, 'subsample': 0.5697}"
