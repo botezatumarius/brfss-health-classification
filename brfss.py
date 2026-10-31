@@ -603,6 +603,44 @@ def stage_engineering(raw, sample, holdout):
         evaluate(pipe(make(), features=Xe.columns), Xe, y, f"{name} + engineered", "engineering")
 
 
+MULTI_SCORING = {"macro_f1": "f1_macro", "macro_auc": "roc_auc_ovr", "weighted_auc": "roc_auc_ovr_weighted",
+                 "bal_acc": "balanced_accuracy"}
+
+
+def stage_multiclass(raw, sample, holdout):
+    """Three classes (Excellent/Very good, Good, Fair/Poor) and the original five, with multi-class metrics."""
+    from sklearn.dummy import DummyClassifier
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.metrics import confusion_matrix
+    from sklearn.model_selection import cross_val_predict
+    rows = []
+    for classes in (3, 5):
+        X = encode(raw.loc[sample])
+        y = target(raw.loc[sample], 3) if classes == 3 else raw.loc[sample, "GENHLTH"].astype(int) - 1
+        models = {"Dummy (stratified)": DummyClassifier(strategy="stratified", random_state=SEED),
+                  "Logistic regression": LogisticRegression(C=0.1, max_iter=3000),
+                  "Logistic regression (balanced)": LogisticRegression(C=0.1, max_iter=3000, class_weight="balanced"),
+                  "LightGBM": lightgbm(objective="multiclass"),
+                  "LightGBM (balanced)": lightgbm(objective="multiclass", class_weight="balanced")}
+        for name, clf in models.items():
+            scores = cross_validate(pipe(clf), X, y, cv=CV, scoring=MULTI_SCORING, n_jobs=JOBS)
+            rows.append({"classes": classes, "model": name,
+                         **{m: scores[f"test_{m}"].mean() for m in MULTI_SCORING},
+                         **{f"{m}_std": scores[f"test_{m}"].std() for m in MULTI_SCORING}})
+            print(f"multiclass {classes} {name:32s} macro-F1 {rows[-1]['macro_f1']:.4f} "
+                  f"macro-AUC {rows[-1]['macro_auc']:.4f}", flush=True)
+        if classes == 3:
+            pred = cross_val_predict(pipe(lightgbm(objective="multiclass", class_weight="balanced")), X, y, cv=CV,
+                                     n_jobs=JOBS)
+            cm = confusion_matrix(y, pred, normalize="true")
+            plt.figure(figsize=(4.6, 3.6))
+            labels = ["Exc./Very good", "Good", "Fair/Poor"]
+            sns.heatmap(cm, annot=True, fmt=".0%", cmap="Blues", cbar=False, xticklabels=labels, yticklabels=labels)
+            plt.gca().set(title="3 classes: LightGBM (balanced)", xlabel="predicted", ylabel="true")
+            savefig("multiclass_confusion")
+    pd.DataFrame(rows).to_csv(RESULTS / "multiclass.csv", index=False)
+
+
 STAGES = {"eda": stage_eda,
           "curve": stage_learning_curve,
           "basic": stage_basic,
@@ -612,7 +650,8 @@ STAGES = {"eda": stage_eda,
           "selection": stage_selection,
           "engineering": stage_engineering,
           "stats": stage_stats,
-          "nested": stage_nested}
+          "nested": stage_nested,
+          "multiclass": stage_multiclass}
 
 
 def main():
