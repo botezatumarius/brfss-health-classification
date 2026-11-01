@@ -641,6 +641,145 @@ def stage_multiclass(raw, sample, holdout):
     pd.DataFrame(rows).to_csv(RESULTS / "multiclass.csv", index=False)
 
 
+LABELS = {
+    "_AGE80": "Age", "_SEX": "Female", "_RACE": "Race/ethnicity", "MARITAL": "Marital status",
+    "_EDUCAG": "Education level", "_INCOMG1": "Income level", "EMPLOY1": "Employment", "RENTHOM1": "Home ownership",
+    "VETERAN3": "Veteran", "_CHLDCNT": "Children in household", "_URBSTAT": "Rural county", "_STATE": "State",
+    "_HLTHPLN": "Has health insurance", "PERSDOC3": "Personal doctor", "MEDCOST1": "Could not afford doctor",
+    "CHECKUP1": "Time since checkup", "_RFHYPE6": "High blood pressure", "_RFCHOL3": "High cholesterol",
+    "_MICHD": "Heart attack/CHD", "CVDSTRK3": "Stroke", "_ASTHMS1": "Asthma", "CHCSCNCR": "Skin cancer",
+    "CHCOCNCR": "Other cancer", "CHCCOPD3": "COPD", "ADDEPEV3": "Depression", "CHCKDNY2": "Kidney disease",
+    "DIABETE4": "Diabetes", "_DRDXAR3": "Arthritis", "_LMTACT3": "Arthritis limits activities", "DEAF": "Deaf",
+    "BLIND": "Blind", "DECIDE": "Difficulty concentrating", "DIFFWALK": "Difficulty walking",
+    "DIFFDRES": "Difficulty dressing", "DIFFALON": "Difficulty doing errands", "_TOTINDA": "Physically active",
+    "_SMOKER3": "Smoking status", "_CURECI1": "E-cigarette user", "USENOW3": "Smokeless tobacco",
+    "_RFBING5": "Binge drinker", "_DRNKWK1": "Drinks per week", "_FRUTSU1": "Fruit per day",
+    "_VEGESU1": "Vegetables per day", "FRNCHDA_": "Fried potatoes per day", "_BMI5": "BMI", "FLUSHOT7": "Flu shot",
+    "PNEUVAC4": "Pneumonia vaccine", "_AIDTST4": "HIV test", "_CHOLCH3": "Cholesterol check",
+    "N_CHRONIC": "Number of chronic conditions", "N_DISABILITY": "Number of disabilities",
+}
+
+
+# Codebook meaning of the nominal levels shown in plots.
+LEVELS = {
+    "_RACE": {1: "White", 2: "Black", 3: "American Indian", 4: "Asian", 5: "Pacific Islander", 6: "other",
+              7: "multiracial", 8: "Hispanic"},
+    "MARITAL": {1: "married", 2: "divorced", 3: "widowed", 4: "separated", 5: "never married", 6: "unmarried couple"},
+    "EMPLOY1": {1: "employed", 2: "self-employed", 3: "out of work 1+ year", 4: "out of work < 1 year",
+                5: "homemaker", 6: "student", 7: "retired", 8: "unable to work"},
+    "RENTHOM1": {1: "own", 2: "rent", 3: "other"},
+    "PERSDOC3": {1: "one", 2: "more than one", 3: "none"},
+    "DIABETE4": {1: "yes", 2: "only in pregnancy", 3: "no", 4: "prediabetes"},
+    "_LMTACT3": {1: "limited", 2: "not limited", 3: "no arthritis"},
+}
+
+
+def readable(column):
+    """Plain-language name of an encoded column, for plots."""
+    feature = raw_feature(column)
+    name = LABELS.get(feature, feature)
+    if "missingindicator_" in column:
+        return f"{name} (missing)"
+    level = column.split("__", 1)[-1][len(feature):].lstrip("_")
+    if not level:
+        return name
+    code = int(float(level))
+    return f"{name}: {'missing' if code == -1 else LEVELS.get(feature, {}).get(code, code)}"
+
+
+def shap_values(clf, Z):
+    """SHAP values of the positive class (older SHAP versions return one array per class)."""
+    import shap
+    values = shap.TreeExplainer(clf).shap_values(Z)
+    return values[1] if isinstance(values, list) else values
+
+
+def youden(y, p):
+    """Threshold maximising sensitivity + specificity - 1."""
+    from sklearn.metrics import roc_curve
+    fpr, tpr, thresholds = roc_curve(y, p)
+    return thresholds[np.argmax(tpr - fpr)]
+
+
+def stage_errors(raw, sample, holdout):
+    """Instances that the three best models all misclassify, analysed with out-of-fold SHAP values."""
+    from sklearn.ensemble import HistGradientBoostingClassifier
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.model_selection import cross_val_predict
+    X, y = data(raw, sample)
+    models = {"LightGBM": lightgbm(),
+              "Hist. gradient boosting": HistGradientBoostingClassifier(learning_rate=0.05, max_iter=300,
+                                                                        random_state=SEED),
+              "Logistic regression": LogisticRegression(C=0.1, max_iter=2000)}
+    probs, wrong = {}, []
+    for name, clf in models.items():
+        p = cross_val_predict(pipe(clf), X, y, cv=CV, method="predict_proba", n_jobs=JOBS)[:, 1]
+        probs[name] = p
+        wrong.append((p >= youden(y, p)).astype(int) != y.values)
+    always = np.logical_and.reduce(wrong)
+    mean_p = pd.Series(np.mean(list(probs.values()), axis=0), index=X.index)
+    summary = pd.DataFrame({"true": y, "mean_p": mean_p, "always_wrong": always})
+    summary.to_csv(RESULTS / "oof_predictions.csv", index_label="row")
+
+    # The two most confident false negatives and false positives shared by all three models.
+    fn = summary[(summary.true == 1) & summary.always_wrong].nsmallest(2, "mean_p").index
+    fp = summary[(summary.true == 0) & summary.always_wrong].nlargest(2, "mean_p").index
+    cases = list(fn) + list(fp)
+    Xe = engineer(X)
+    show = ["_AGE80", "_SEX", "_INCOMG1", "_EDUCAG", "EMPLOY1", "N_CHRONIC", "N_DISABILITY", "DIFFWALK", "ADDEPEV3",
+            "_TOTINDA", "_SMOKER3", "_BMI5"]
+    profile = Xe.loc[cases, show].T
+    profile.columns = [f"{'FN' if summary.true[c] else 'FP'} #{c}" for c in cases]
+    profile["Fair/Poor (median)"] = Xe.loc[y == 1, show].median()
+    profile["Exc./VG/Good (median)"] = Xe.loc[y == 0, show].median()
+    profile.index = [LABELS.get(f, f) for f in show]
+    profile.loc["P(Fair/Poor), mean of 3 models"] = list(mean_p[cases].round(3)) + [np.nan, np.nan]
+    profile.to_csv(RESULTS / "error_cases.csv")
+
+    # Groups behind the errors: consistent false negatives vs correctly found Fair/Poor respondents.
+    groups = {"False negatives": (y == 1) & always, "Other Fair/Poor": (y == 1) & ~always,
+              "False positives": (y == 0) & always, "Other Exc./VG/Good": (y == 0) & ~always}
+    ordered = [f for f in show if FEATURES.get(f, ("", "num"))[1] != "cat"]
+    table = pd.DataFrame({name: Xe.loc[mask, ordered].mean() for name, mask in groups.items()}).rename(index=LABELS)
+    table.loc["People"] = [mask.sum() for mask in groups.values()]
+    table.to_csv(RESULTS / "error_groups.csv")
+
+    fig, axes = plt.subplots(1, 2, figsize=(9, 3.4))
+    for value, color, label in ((0, "#2a78d6", CLASS_NAMES[0]), (1, "#eb6834", CLASS_NAMES[1])):
+        axes[0].hist(mean_p[y == value], bins=40, alpha=0.6, color=color, label=label, density=True)
+    for c in cases:
+        axes[0].axvline(mean_p[c], color="#0b0b0b", linestyle=":", linewidth=1)
+    axes[0].set(title="Out-of-fold P(Fair/Poor)", xlabel="mean probability of the 3 models")
+    axes[0].legend(fontsize=7)
+    burden = Xe["N_CHRONIC"] + Xe["N_DISABILITY"]
+    rate = pd.DataFrame({"burden": burden.clip(upper=8), "fn": groups["False negatives"], "pos": y == 1})
+    share = rate[rate.pos].groupby("burden")["fn"].mean()
+    axes[1].bar(share.index, share.values, color="#eb6834")
+    axes[1].set(title="Fair/Poor respondents missed by all 3 models", xlabel="chronic conditions + disabilities",
+                ylabel="share missed")
+    savefig("errors_overview")
+
+    # SHAP waterfall of each case, from the LightGBM model of the fold in which it was held out.
+    fig, axes = plt.subplots(2, 2, figsize=(11, 6))
+    for ax, case in zip(axes.flat, cases):
+        position = X.index.get_loc(case)
+        train = next(tr for tr, te in CV.split(X, y) if position in te)
+        model = pipe(lightgbm()).fit(X.iloc[train], y.iloc[train])
+        row = model["prep"].transform(X.loc[[case]])
+        values = shap_values(model["clf"], row)[0]
+        names = [readable(c) for c in model["prep"].get_feature_names_out()]
+        order = np.argsort(np.abs(values))[::-1][:8][::-1]
+        colors = ["#eb6834" if v > 0 else "#2a78d6" for v in values[order]]
+        ax.barh([names[i] for i in order], values[order], color=colors)
+        kind = "false negative" if y[case] else "false positive"
+        ax.set_title(f"Respondent #{case}: {kind}, P = {mean_p[case]:.2f}", fontsize=9)
+        ax.set_xlabel("SHAP contribution (log-odds)", fontsize=8)
+        ax.axvline(0, color="#52514e", linewidth=0.8)
+        ax.tick_params(axis="y", labelsize=8)
+    savefig("errors_shap")
+    print("consistently misclassified:", {k: int(v.sum()) for k, v in groups.items()}, "cases", cases)
+
+
 STAGES = {"eda": stage_eda,
           "curve": stage_learning_curve,
           "basic": stage_basic,
@@ -651,7 +790,8 @@ STAGES = {"eda": stage_eda,
           "engineering": stage_engineering,
           "stats": stage_stats,
           "nested": stage_nested,
-          "multiclass": stage_multiclass}
+          "multiclass": stage_multiclass,
+          "errors": stage_errors}
 
 
 def main():

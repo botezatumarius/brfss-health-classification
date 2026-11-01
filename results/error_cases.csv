@@ -1,0 +1,14 @@
+,FN #155681,FN #80087,FP #179027,FP #87717,Fair/Poor (median),Exc./VG/Good (median)
+Age,29.0,37.0,62.0,57.0,62.0,56.0
+Female,1.0,0.0,0.0,0.0,1.0,1.0
+Income level,6.0,,,1.0,3.0,5.0
+Education level,4.0,4.0,1.0,2.0,3.0,3.0
+Employment,1.0,2.0,8.0,8.0,7.0,2.0
+Number of chronic conditions,0.0,0.0,6.0,8.0,3.0,1.0
+Number of disabilities,0.0,0.0,4.0,5.0,1.0,0.0
+Difficulty walking,0.0,0.0,1.0,1.0,0.0,0.0
+Depression,0.0,0.0,1.0,1.0,0.0,0.0
+Physically active,1.0,1.0,0.0,0.0,1.0,1.0
+Smoking status,0.0,0.0,3.0,3.0,1.0,0.0
+BMI,20.92,25.83,,35.8,29.29,27.2
+"P(Fair/Poor), mean of 3 models",0.01,0.01,0.936,0.932,,
