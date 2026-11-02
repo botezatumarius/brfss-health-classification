@@ -780,6 +780,43 @@ def stage_errors(raw, sample, holdout):
     print("consistently misclassified:", {k: int(v.sum()) for k, v in groups.items()}, "cases", cases)
 
 
+def stage_xai(raw, sample, holdout):
+    """SHAP explanations of LightGBM: global importance, feature groups and dependence plots."""
+    import shap
+    X, y = data(raw, sample)
+    model = pipe(lightgbm()).fit(X, y)
+    rows = X.sample(3000, random_state=SEED)
+    Z = model["prep"].transform(rows)
+    names = model["prep"].get_feature_names_out()
+    values = shap_values(model["clf"], Z)
+    importance = pd.Series(np.abs(values).mean(axis=0), index=names)
+    by_feature = importance.groupby([raw_feature(n) for n in names]).sum().sort_values(ascending=False)
+    by_group = by_feature.groupby([FEATURES[f][0] for f in by_feature.index]).sum().sort_values()
+    by_feature.rename(index=LABELS).to_csv(RESULTS / "shap_features.csv", header=["mean_abs_shap"])
+    by_group.to_csv(RESULTS / "shap_groups.csv", header=["mean_abs_shap"])
+
+    plt.figure()
+    shap.summary_plot(values, Z, feature_names=[readable(n) for n in names], max_display=15, show=False,
+                      plot_size=(7, 5))
+    plt.title("SHAP values of the 15 most influential columns (LightGBM)")
+    savefig("shap_beeswarm")
+    fig, axes = plt.subplots(1, 2, figsize=(9, 3.6))
+    top = by_feature.head(12)[::-1]
+    axes[0].barh([LABELS.get(f, f) for f in top.index], top.values, color="#2a78d6")
+    axes[0].set(title="Importance per survey variable", xlabel="mean |SHAP|")
+    axes[1].barh(by_group.index, by_group.values, color="#1baf7a")
+    axes[1].set(title="Importance per variable group", xlabel="mean |SHAP|")
+    savefig("shap_importance")
+    fig, axes = plt.subplots(1, 2, figsize=(9, 3.2))
+    for ax, feature in zip(axes, ("_AGE80", "_BMI5")):
+        column = list(names).index(f"num__{feature}")
+        raw_values = rows[feature]
+        ax.scatter(raw_values, values[:, column], s=4, alpha=0.4, color="#2a78d6")
+        ax.axhline(0, color="#52514e", linewidth=0.8)
+        ax.set(title=f"{LABELS[feature]}: effect on the prediction", xlabel=LABELS[feature], ylabel="SHAP value")
+    savefig("shap_dependence")
+
+
 STAGES = {"eda": stage_eda,
           "curve": stage_learning_curve,
           "basic": stage_basic,
@@ -791,7 +828,8 @@ STAGES = {"eda": stage_eda,
           "stats": stage_stats,
           "nested": stage_nested,
           "multiclass": stage_multiclass,
-          "errors": stage_errors}
+          "errors": stage_errors,
+          "xai": stage_xai}
 
 
 def main():
