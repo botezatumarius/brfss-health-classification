@@ -817,6 +817,62 @@ def stage_xai(raw, sample, holdout):
     savefig("shap_dependence")
 
 
+FINAL_PARAMS_FILE = RESULTS / "final_params.csv"
+
+
+def stage_holdout(raw, sample, holdout):
+    """Final model: tuned on the whole sample, threshold from out-of-fold predictions, tested once on the hold-out."""
+    from sklearn.calibration import calibration_curve
+    from sklearn.dummy import DummyClassifier
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.metrics import (average_precision_score, balanced_accuracy_score, brier_score_loss,
+                                 confusion_matrix, f1_score, precision_recall_curve, roc_curve)
+    from sklearn.model_selection import RandomizedSearchCV, cross_val_predict
+    X, y = data(raw, sample)
+    Xh, yh = data(raw, holdout)
+    search = RandomizedSearchCV(pipe(lightgbm()), LIGHTGBM_SPACE, n_iter=25, scoring="roc_auc",
+                                cv=StratifiedKFold(3, shuffle=True, random_state=SEED), random_state=SEED, n_jobs=JOBS)
+    search.fit(X, y)
+    pd.Series(search.best_params_).to_csv(FINAL_PARAMS_FILE, header=["value"])
+    final = search.best_estimator_
+    threshold = youden(y, cross_val_predict(final, X, y, cv=CV, method="predict_proba", n_jobs=JOBS)[:, 1])
+
+    models = {"Final: tuned LightGBM": final,
+              "Logistic regression": pipe(LogisticRegression(C=0.1, max_iter=3000)).fit(X, y),
+              "Dummy (prior)": pipe(DummyClassifier()).fit(X, y)}
+    rows, curves = [], {}
+    for name, model in models.items():
+        p = model.predict_proba(Xh)[:, 1]
+        curves[name] = p
+        row = {"model": name, "roc_auc": roc_auc_score(yh, p), "pr_auc": average_precision_score(yh, p),
+               "brier": brier_score_loss(yh, p)}
+        if name.startswith("Final"):
+            pred = (p >= threshold).astype(int)
+            tn, fp, fn, tp = confusion_matrix(yh, pred).ravel()
+            row.update(threshold=threshold, sensitivity=tp / (tp + fn), specificity=tn / (tn + fp),
+                       precision=tp / (tp + fp), f1=f1_score(yh, pred), bal_acc=balanced_accuracy_score(yh, pred))
+        rows.append(row)
+        print(f"holdout {name:45s} AUC {row['roc_auc']:.4f} PR-AUC {row['pr_auc']:.4f}", flush=True)
+    pd.DataFrame(rows).to_csv(RESULTS / "holdout.csv", index=False)
+
+    fig, axes = plt.subplots(1, 3, figsize=(11, 3.4))
+    for (name, p), color in zip(curves.items(), ("#eb6834", "#2a78d6", "#52514e")):
+        fpr, tpr, _ = roc_curve(yh, p)
+        axes[0].plot(fpr, tpr, color=color, label=f"{name.split(':')[0]} ({roc_auc_score(yh, p):.3f})")
+        if not name.startswith("Dummy"):
+            precision, recall, _ = precision_recall_curve(yh, p)
+            axes[1].plot(recall, precision, color=color)
+    axes[0].set(title="ROC curve (hold-out)", xlabel="false positive rate", ylabel="true positive rate")
+    axes[0].legend(fontsize=7)
+    axes[1].axhline(yh.mean(), color="#52514e", linestyle=":")
+    axes[1].set(title="Precision-recall (hold-out)", xlabel="recall", ylabel="precision")
+    observed, predicted = calibration_curve(yh, curves[next(iter(curves))], n_bins=10, strategy="quantile")
+    axes[2].plot(predicted, observed, marker="o", color="#eb6834")
+    axes[2].plot([0, 1], [0, 1], color="#52514e", linestyle=":")
+    axes[2].set(title="Calibration of the final model", xlabel="predicted probability", ylabel="observed share")
+    savefig("holdout")
+
+
 STAGES = {"eda": stage_eda,
           "curve": stage_learning_curve,
           "basic": stage_basic,
@@ -829,7 +885,8 @@ STAGES = {"eda": stage_eda,
           "nested": stage_nested,
           "multiclass": stage_multiclass,
           "errors": stage_errors,
-          "xai": stage_xai}
+          "xai": stage_xai,
+          "holdout": stage_holdout}
 
 
 def main():

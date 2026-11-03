@@ -1,0 +1,8 @@
+,value
+clf__colsample_bytree,0.7281572123417965
+clf__learning_rate,0.010213944061855218
+clf__min_child_samples,364.0
+clf__n_estimators,760.0
+clf__num_leaves,98.0
+clf__reg_lambda,0.5487058617419734
+clf__subsample,0.569746930326021
