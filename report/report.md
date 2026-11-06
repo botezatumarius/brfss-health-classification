@@ -516,3 +516,232 @@ Two effects that a linear model cannot represent explain why boosting beats logi
   favourably. This is the same adaptation seen in the error analysis, and it agrees with the income ×
   age pattern of Figure 4.
 
+## 7. Advanced level
+
+### 7.1 Automatic tuning with nested cross-validation
+
+**The problem.** If many hyperparameter settings are tried and the best cross-validation score is
+reported, that score is optimistic: the setting was *chosen* because it did well on those folds.
+**Nested cross-validation** keeps the choice and the evaluation apart:
+
+- **Outer loop:** the same 10 folds as everywhere else. Each outer test fold is used only to *score*.
+- **Inner loop:** inside the 9 outer training folds, `RandomizedSearchCV` tries random settings and
+  scores them with 3-fold CV, then refits the best one on all 9 folds.
+
+Random search was preferred to a grid because, with seven LightGBM hyperparameters, a grid of only three
+values each would need 2,187 settings, while 25 random settings explore each hyperparameter at 25
+different values. The search spaces (`LIGHTGBM_SPACE` in `brfss.py`):
+
+| Hyperparameter | Range searched | Distribution |
+|---|---|---|
+| number of trees | 200 – 1,200 | uniform integers |
+| learning rate | 0.01 – 0.2 | log-uniform |
+| leaves per tree | 8 – 128 | uniform integers |
+| minimum people per leaf | 20 – 400 | uniform integers |
+| rows / columns per tree | 50–100 % / 30–100 % | uniform |
+| L2 regularisation (λ) | 0.001 – 30 | log-uniform |
+| *Logistic regression: C* | *0.001 – 10* | *log-uniform, 15 settings* |
+
+**Results** (750 LightGBM fits in total):
+
+| Model | Untuned (Section 6.1) | Tuned: inner CV | **Tuned: outer CV (unbiased)** | Folds won | p (Holm) |
+|---|---|---|---|---|---|
+| LightGBM | 0.8662 | 0.8674 | **0.8689 ± 0.0043** | 10 / 10 | 0.012 |
+| Logistic regression | 0.8604 | 0.8606 | **0.8611 ± 0.0047** | 9 / 10 | 0.029 |
+
+**Findings.**
+
+- **Tuning improves LightGBM by 0.003 AUC**, making it the best model of the project. The logistic
+  regression barely changes: with one hyperparameter and an additive problem, there is little to tune.
+- **The search is stable**: the same setting won in **all ten** outer folds (the candidates are drawn
+  with the same seed, and the same one is always best): a slow learning rate (0.010) with many
+  trees (760), large trees (98 leaves) that are strongly regularised (at least 364 people per leaf,
+  57 % of the rows and 73 % of the columns per tree). Slow, regularised learning generalises better.
+- **The unbiased (outer) score is not lower than the inner one** (0.869 against 0.867). This is
+  expected here: the inner models are trained on 30,000 people and the outer ones on 45,000, and the
+  learning curve showed that more data still helps. There is no sign of selection bias, because 25
+  settings on 50,000 people are too few to overfit the folds.
+
+### 7.2 Feature engineering
+
+Ten new variables were built from medical guidelines and from what the previous sections revealed
+(`engineer()` in `brfss.py`):
+
+| New variable | Definition | Motivation |
+|---|---|---|
+| `N_CHRONIC` | number of chronic conditions (0–12) | multimorbidity is a strong driver of poor health |
+| `N_DISABILITY` | number of functional difficulties (0–6) | disability was the strongest group (Section 6.4) |
+| `UNDERWEIGHT` | BMI < 18.5 | WHO class; the BMI effect is not linear (Section 6.7) |
+| `OBESITY_CLASS` | 0 = BMI < 30, 1 = 30–35, 2 = 35–40, 3 = ≥ 40 | WHO obesity classes |
+| `HEAVY_DRINKER` | > 7 drinks/week (women), > 14 (men) | CDC definition, which depends on sex |
+| `FIVE_A_DAY` | fruit + vegetables ≥ 5 per day | WHO recommendation |
+| `AGE_X_CHRONIC` | age × number of chronic conditions | a disease weighs differently at 30 and at 70 |
+| `INACTIVE_X_DISABILITY` | physically inactive × number of difficulties | inactivity and disability reinforce each other |
+| `LOW_INCOME_NO_COVER` | income < $25k and no health insurance | the most vulnerable group |
+| `COST_BARRIER_X_CHRONIC` | could not afford a doctor × chronic conditions | untreated disease |
+
+| Model | Without | With engineered features | Folds won | p (Holm) |
+|---|---|---|---|---|
+| Logistic regression | 0.8604 | **0.8613** | 8 / 10 | 0.029 |
+| LightGBM | **0.8662** | 0.8657 | 3 / 10 | 0.43 |
+
+**Findings.** The new variables give the **linear model a small but significant gain**: it cannot build
+counts, thresholds or interactions by itself, so receiving them ready-made helps. **LightGBM gains
+nothing**, because its trees already build such combinations from the original variables (a tree that
+splits on age and then on heart disease *is* an interaction). The engineered variables are therefore
+kept for the error analysis, where `N_CHRONIC` and `N_DISABILITY` make the profiles easier to read, but
+the final model uses the original 49 variables, which is simpler with equal accuracy.
+
+### 7.3 Three classes
+
+The binary target hides a large middle group: *Good* (31.5 %) is neither healthy enough to be
+"very good" nor ill enough to be "fair". The three-class version separates **Excellent/Very good**
+(51.9 %), **Good** (31.5 %) and **Fair/Poor** (16.6 %). Since accuracy would again favour the large
+classes, the metrics are **macro-F1** (F1 averaged over the classes with equal weight) and **macro
+ROC-AUC** (one-vs-rest AUC of each class, averaged):
+
+| Model | Macro-F1 | Macro ROC-AUC | Balanced accuracy |
+|---|---|---|---|
+| Dummy (stratified) | 0.335 | 0.501 | 0.335 |
+| Logistic regression | 0.557 | 0.771 | 0.548 |
+| Logistic regression (class weights) | 0.572 | 0.767 | 0.588 |
+| LightGBM | 0.573 | **0.775** | 0.565 |
+| **LightGBM (class weights)** | **0.574** | 0.769 | **0.593** |
+
+![Confusion matrix](figures/multiclass_confusion.png)
+
+*Figure 15: confusion matrix of LightGBM with class weights (out-of-fold, each row sums to 100 %).*
+
+**Findings.**
+
+- LightGBM is again the best model. Class weights trade a little AUC for a better balance between the
+  classes (balanced accuracy 0.565 → 0.593), as in the binary problem.
+- **The two extremes are well separated**: only 7–8 % of the Excellent/Very good people are predicted
+  Fair/Poor and vice versa.
+- **The middle class is the hard one**: only 43 % of the *Good* people are recognised, the rest being
+  split between the two neighbours. "Good" is a boundary category, and the step from "very good" to
+  "good" depends on personal judgement more than on the measured factors.
+- The **original five classes** confirm this (best macro-F1 0.398, macro-AUC 0.768): splitting
+  Excellent from Very good and Fair from Poor adds two more boundaries that the data cannot draw well.
+- The target is **ordinal**, and the errors show it: in Figure 15, mistakes between adjacent classes
+  (24–33 %) are three to four times more frequent than between the two extremes (7–8 %).
+
+## 8. Final model and recommendation
+
+### 8.1 The final model
+
+All the evidence points to the same choice:
+
+| Decision | Choice | Evidence |
+|---|---|---|
+| Model | **LightGBM** | tied best with the other boosting models (Wilcoxon, Section 6.5), 30× faster |
+| Variables | **all 49 original variables** | selection, the hypothesis subset and PCA all lose accuracy (6.3, 6.4); engineered features add nothing for LightGBM (7.2) |
+| Imbalance | **no resampling; threshold chosen explicitly** | resampling does not raise AUC (6.2) |
+| Hyperparameters | **randomised search, 25 settings, 3-fold CV** | the procedure validated by nested CV (7.1) |
+
+The search was run once more on the whole sample of 50,000 people; it chose a slow learning rate (0.010)
+with 760 trees of up to 98 leaves, at least 364 people per leaf, and 57 % of the rows and 73 % of the
+columns per tree. The **decision threshold** was chosen from out-of-fold predictions on the same sample,
+with Youden's J: **0.155**, close to the share of Fair/Poor people (0.166), as expected for a
+well-calibrated model.
+
+### 8.2 Confirmation on 100,000 new people
+
+The model was then applied **once** to the hold-out set, which had not been used for any decision:
+
+| Model | ROC-AUC | PR-AUC | Brier score |
+|---|---|---|---|
+| **Final: tuned LightGBM** | **0.871** | **0.608** | **0.094** |
+| Logistic regression (Section 5) | 0.865 | 0.601 | 0.096 |
+| Dummy (prior) | 0.500 | 0.166 | 0.139 |
+
+![Hold-out](figures/holdout.png)
+
+*Figure 16: ROC and precision-recall curves on the hold-out set (dotted: random model), and calibration
+of the final model (points on the diagonal = predicted probabilities match the observed shares).*
+
+The hold-out AUC (0.871) is slightly **higher** than in cross-validation (0.866): the final model is
+trained on all 50,000 people instead of 45,000, exactly as the learning curve predicted (0.872 at
+50,000 rows, Section 4.2). So the cross-validated results were **not optimistic**, and the model
+generalises to new people. Its probabilities are also **well calibrated** (Figure 16, right): when it
+says 40 %, about 40 % of those people are in fair or poor health.
+
+**At the chosen threshold**, on the hold-out set:
+
+| Sensitivity | Specificity | Precision | F1 | Balanced accuracy |
+|---|---|---|---|---|
+| 80.5 % | 77.5 % | 41.6 % | 0.548 | 0.790 |
+
+In plain words, for every 1,000 people: 166 are in fair or poor health, and the model **finds 134 of
+them** and misses 32; it also flags 188 of the 834 healthy people. Of the people it flags, 42 % really
+are in fair or poor health, **2.5 times** the 16.6 % expected by chance.
+
+### 8.3 Recommendation
+
+- **Use the tuned LightGBM model** for screening at population level: it is the most accurate model,
+  calibrated, fast to train (seconds) and explainable with SHAP.
+- **Choose the threshold for the purpose.** The Youden threshold balances both errors; a programme
+  that must not miss anyone should lower it (more sensitivity, more false alarms), and one with limited
+  resources should raise it. The calibrated probabilities make this choice easy to reason about.
+- **If a simpler model is required**, logistic regression loses only 0.006 AUC and its coefficients
+  can be read directly; it benefits from the engineered features of Section 7.2.
+- **Do not expect much more from other algorithms.** Ten models, tuning and feature engineering all
+  converge on 0.866–0.871. The remaining errors come from information that is not in the data
+  (Section 6.6); to go further, new variables would be needed (for example pain, recent illness or
+  the excluded *Healthy Days* questions, if the purpose allows them).
+
+## 9. Conclusions
+
+1. **Self-rated health can be predicted well** from causes and circumstances alone: ROC-AUC 0.871 on
+   100,000 new people, far above the 0.5 baseline, after removing the six variables that leak the
+   answer.
+2. **What matters most is function, disease and money**: difficulty walking, physical inactivity,
+   chronic conditions and low income or education. The three groups disability, chronic conditions and
+   socioeconomic status alone reach 96 % of the full performance with fewer than half of the variables.
+3. **The relationship is mostly additive**, so logistic regression is almost as good as the best
+   model; gradient boosting gains by capturing non-linear effects such as the U-shaped BMI curve and
+   the inverted-U effect of age.
+4. **Many standard techniques did not help here** — rebalancing, PCA, feature selection and feature
+   engineering for the boosted model — and the statistical tests show it. Knowing *why* (Sections 6.2–6.4)
+   is as useful as the final number.
+5. **The remaining errors are people whose own judgement differs from their risk profile**: healthy-looking
+   people who feel unwell and very ill people who feel fine. Self-rated health is a personal judgement,
+   which is exactly why it is valuable in public health.
+
+## 10. Ethics
+
+**Data.** BRFSS is public, anonymised data released by the CDC for research; no attempt was made to
+identify anyone, and the raw files are not redistributed in the repository (the script downloads them).
+
+**Limits of the conclusions.**
+
+- **Association, not causation.** The model shows which characteristics go together with poor
+  self-rated health. It does not show that changing them would change anyone's health: for example,
+  poor health can cause low income (through job loss) as much as low income can cause poor health.
+- **Self-reported data.** Both the target and most predictors are answers to a telephone survey, with the
+  usual errors of memory and social desirability. The model learns how people *describe* their health.
+- **No survey weights.** BRFSS provides weights to make the sample represent the US population; they
+  were not used, so the percentages describe the people interviewed, not the whole country.
+- **Fairness.** Income, education, race and state are among the predictors. They are useful to describe
+  health inequalities, but a model like this must **not** be used to make decisions about individuals
+  (insurance prices, access to services, hiring), where it would penalise people for their
+  socioeconomic situation. Its intended use is population-level analysis, such as targeting public
+  health programmes to the groups that need them most.
+
+## References
+
+1. Centers for Disease Control and Prevention. *Behavioral Risk Factor Surveillance System, 2021 Survey
+   Data and Codebook (LLCP 2021)*. <https://www.cdc.gov/brfss/annual_data/annual_2021.html>
+2. Centers for Disease Control and Prevention. *Health-Related Quality of Life (HRQOL-4) — Healthy Days
+   measures*. <https://www.cdc.gov/hrqol/>
+3. Idler, E. L. & Benyamini, Y. (1997). Self-rated health and mortality: a review of twenty-seven
+   community studies. *Journal of Health and Social Behavior*, 38(1), 21–37.
+4. Pedregosa, F. et al. (2011). Scikit-learn: Machine learning in Python. *JMLR*, 12, 2825–2830.
+5. Ke, G. et al. (2017). LightGBM: A highly efficient gradient boosting decision tree. *NeurIPS 30*.
+6. Chawla, N. V. et al. (2002). SMOTE: Synthetic minority over-sampling technique. *JAIR*, 16, 321–357.
+7. Demšar, J. (2006). Statistical comparisons of classifiers over multiple data sets. *JMLR*, 7, 1–30.
+8. Cawley, G. C. & Talbot, N. L. C. (2010). On over-fitting in model selection and subsequent selection
+   bias in performance evaluation. *JMLR*, 11, 2079–2107.
+9. Lundberg, S. M. & Lee, S.-I. (2017). A unified approach to interpreting model predictions. *NeurIPS 30*.
+10. World Health Organization. *Body mass index (BMI) classification*; *Healthy diet* (five portions of
+    fruit and vegetables a day).
