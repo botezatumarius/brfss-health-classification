@@ -21,7 +21,7 @@ STYLE = """
 body { font-family: "Segoe UI", Arial, sans-serif; font-size: 10.5pt; line-height: 1.45; color: #1d2433; }
 h1 { font-size: 20pt; margin: 0 0 6pt; }
 h2 { font-size: 15pt; margin-top: 22pt; border-bottom: 1px solid #c8ccd4; padding-bottom: 3pt; break-before: page; }
-h2:first-of-type, h2[id="10-ethics"], h2#references { break-before: auto; }
+h2:first-of-type, h2[id="10-ethics-and-use-of-generative-ai"], h2#references { break-before: auto; }
 h3 { font-size: 12pt; margin-top: 16pt; }
 h4 { font-size: 10.5pt; margin-top: 12pt; }
 h2, h3, h4 { break-after: avoid; }

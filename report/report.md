@@ -708,7 +708,7 @@ are in fair or poor health, **2.5 times** the 16.6 % expected by chance.
    people who feel unwell and very ill people who feel fine. Self-rated health is a personal judgement,
    which is exactly why it is valuable in public health.
 
-## 10. Ethics
+## 10. Ethics and Use of Generative AI
 
 **Data.** BRFSS is public, anonymised data released by the CDC for research; no attempt was made to
 identify anyone, and the raw files are not redistributed in the repository (the script downloads them).
@@ -727,6 +727,8 @@ identify anyone, and the raw files are not redistributed in the repository (the 
   (insurance prices, access to services, hiring), where it would penalise people for their
   socioeconomic situation. Its intended use is population-level analysis, such as targeting public
   health programmes to the groups that need them most.
+
+**Use of generative AI.** Claude was used throughout the project for code debugging as well as for report formatting.
 
 ## References
 
